@@ -1,0 +1,38 @@
+FROM alpine AS builder
+
+# Download QEMU, see https://github.com/docker/hub-feedback/issues/1261
+ENV QEMU_URL https://github.com/balena-io/qemu/releases/download/v3.0.0%2Bresin/qemu-3.0.0+resin-aarch64.tar.gz
+RUN apk add curl && curl -L ${QEMU_URL} | tar zxvf - -C . --strip-components 1
+
+
+FROM arm64v8/node:10
+
+# Add QEMU
+COPY --from=builder qemu-aarch64-static /usr/bin
+
+RUN npm install -g bower grunt-cli
+RUN apt-get -qq update && apt-get install -qq gifsicle libjpeg-progs optipng libavahi-compat-libdnssd-dev
+
+WORKDIR /dashkiosk
+COPY . /dashkiosk/
+ENV NPM_CONFIG_LOGLEVEL warn
+RUN rm -rf node_modules build && \
+    npm install && \
+    grunt && \
+    cd dist && \
+    npm install --production && \
+    rm -rf ../node_modules ../build && \
+    npm cache clean --force
+
+RUN chmod +x /dashkiosk/entrypoint.sh
+
+# We use SQLite by default. If you want to keep the database between
+# runs, don't forget to provide a volume for /database.
+VOLUME /database
+
+ENV NODE_ENV production
+ENV port 8080
+ENV db__options__storage /database/dashkiosk.sqlite
+
+ENTRYPOINT [ "/dashkiosk/entrypoint.sh" ]
+EXPOSE 8080
